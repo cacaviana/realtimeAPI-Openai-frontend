@@ -1,5 +1,6 @@
 // Configurações básicas
 const baseUrl = "https://app-orion-dev.azurewebsites.net";
+const baseUrlPinecone = "https://app-vectordb-ia.azurewebsites.net";
 let pc = null; // RTCPeerConnection
 let dc = null; // DataChannel
 let localStream = null; // Stream do microfone
@@ -120,7 +121,7 @@ function handleAudioDone() {
   // displayMessage(null, "bot", audioUrl);
 }
 
-// Funções para manipulação visual
+// Funções para manipulação visual com a consulta no Pinecone
 const visualFunctions = {
   changeBackgroundColor: ({ color }) => {
     document.body.style.backgroundColor = color;
@@ -146,52 +147,176 @@ const visualFunctions = {
       success: true,
       html: document.documentElement.outerHTML
     };
+  },
+
+  // Nova função para consultar o Pinecone
+  queryProductInfo: async ({ query, metadata = {}, namespace = "MasterIADEV" }) => {
+    try {
+      const queryParams = new URLSearchParams({
+        question: query,
+        namespace: namespace
+      });
+
+      const response = await fetch(`${baseUrlPinecone}/openai/assistant/complete?${queryParams.toString()}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({})
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erro na API: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const content = data.assistant || "Não foi possível processar a resposta.";
+
+      return {
+        success: true,
+        content: content,
+        metadata: {
+          review: data.review,
+          data: data.data,
+          text: data.text,
+          timestamps: data.timestamps
+        }
+      };
+
+    } catch (error) {
+      console.error('Erro ao consultar o banco de dados:', error);
+      return {
+        success: false,
+        error: 'Desculpe, não consegui acessar as informações no momento.'
+      };
+    }
   }
 };
 
 // Atualizar o manipulador de mensagens do canal de dados
+// Modificar a função handleDataChannelMessage para melhor tratamento de erros
 function handleDataChannelMessage(event) {
-  const msg = JSON.parse(event.data);
-  console.log("Mensagem recebida:", msg);
+  try {
+    const msg = JSON.parse(event.data);
+    console.log("Mensagem recebida:", msg);
 
-  // Adicionar manipulação de chamadas de função
-  if (msg.type === 'response.function_call_arguments.done') {
-    const fn = visualFunctions[msg.name];
-    if (fn) {
-      try {
-        const args = JSON.parse(msg.arguments);
-        const result = fn(args);
+    switch (msg.type) {
+      case "response.output_item.done":
+        if (msg.item && msg.item.type === 'function_call' && msg.item.name === 'queryProductInfo') {
+          // Verificar se existe arguments em vez de output
+          const outputData = msg.item.arguments || msg.item.output;
 
-        // Enviar resultado de volta
-        const response = {
-          type: 'conversation.item.create',
-          item: {
-            type: 'function_call_output',
-            call_id: msg.call_id,
-            output: JSON.stringify(result)
+          if (outputData) {
+            try {
+              const result = JSON.parse(outputData);
+              if (result && result.content) {
+                handleTextDelta(result.content);
+                handleTranscriptDone(result.content);
+              }
+            } catch (error) {
+              console.log("Usando outputData diretamente:", outputData);
+              // Se não for um JSON válido, tentar usar o texto diretamente
+              handleTextDelta(outputData);
+              handleTranscriptDone(outputData);
+            }
+          } else {
+            // Procurar por outros campos que possam conter a resposta
+            const possibleResponse = msg.item.response ||
+              (msg.response && msg.response.output) ||
+              msg.item.output;
+
+            if (possibleResponse) {
+              handleTextDelta(possibleResponse);
+              handleTranscriptDone(possibleResponse);
+            }
           }
-        };
-        dc.send(JSON.stringify(response));
-      } catch (error) {
-        console.error("Erro ao executar função:", error);
-      }
-    }
-  }
+        }
+        break;
 
-  // Manter os manipuladores existentes
-  switch (msg.type) {
-    case "response.audio_transcript.delta":
-      if (msg.delta) handleTextDelta(msg.delta);
-      break;
-    case "response.audio_transcript.done":
-      if (msg.transcript) handleTranscriptDone(msg.transcript);
-      break;
-    case "response.audio.delta":
-      if (msg.delta) audioChunks.push(msg.delta);
-      break;
-    case "response.audio.done":
-      handleAudioDone();
-      break;
+      case "response.function_call_arguments.done":
+        if (msg.name === 'queryProductInfo') {
+          try {
+            const args = msg.arguments ? JSON.parse(msg.arguments) : {};
+            visualFunctions.queryProductInfo(args).then(result => {
+              if (result.success && result.content) {
+                handleTextDelta(result.content);
+                handleTranscriptDone(result.content);
+
+                if (dc && dc.readyState === "open") {
+                  const response = {
+                    type: 'conversation.item.create',
+                    item: {
+                      type: 'function_call_output',
+                      call_id: msg.call_id,
+                      output: JSON.stringify({
+                        content: result.content,
+                        success: true
+                      })
+                    }
+                  };
+                  dc.send(JSON.stringify(response));
+                }
+              }
+            }).catch(error => {
+              console.error('Erro na execução da função:', error);
+              handleTextDelta("Desculpe, ocorreu um erro ao processar sua solicitação.");
+            });
+          } catch (error) {
+            console.error("Erro ao processar argumentos:", error);
+          }
+        }
+        break;
+
+      case "response.audio_transcript.delta":
+        if (msg.delta) handleTextDelta(msg.delta);
+        break;
+
+      case "response.audio_transcript.done":
+        if (msg.transcript) handleTranscriptDone(msg.transcript);
+        break;
+
+      case "response.audio.delta":
+        if (msg.delta) audioChunks.push(msg.delta);
+        break;
+
+      case "response.audio.done":
+        handleAudioDone();
+        break;
+
+      default:
+        console.log("Tipo de mensagem não processado:", msg.type);
+    }
+  } catch (error) {
+    console.error("Erro ao processar mensagem:", error);
+  }
+};
+
+// Função helper para debug
+function logMessageStructure(msg) {
+  console.log("Estrutura da mensagem recebida:");
+  console.log("- Tipo:", msg.type);
+  console.log("- Item:", msg.item);
+  if (msg.item) {
+    console.log("  - Tipo do item:", msg.item.type);
+    console.log("  - Nome:", msg.item.name);
+    console.log("  - Output:", msg.item.output);
+    console.log("  - Arguments:", msg.item.arguments);
+  }
+  console.log("- Resposta completa:", msg);
+};
+
+// Adicionar função para reconexão do WebRTC
+function reconnectWebRTC() {
+  console.log("Tentando reconectar WebRTC...");
+  if (!isWebRTCActive) {
+    initWebRTC().then(() => {
+      isWebRTCActive = true;
+      console.log("Reconexão WebRTC bem-sucedida");
+    }).catch(error => {
+      console.error("Falha na reconexão:", error);
+      setTimeout(reconnectWebRTC, 5000); // Tentar novamente em 5 segundos
+    });
   }
 }
 
@@ -234,20 +359,27 @@ function configureDataChannel() {
         },
         {
           type: 'function',
-          name: 'changeButtonStyle',
-          description: 'Muda o estilo dos botões',
+          name: 'queryProductInfo',
+          description: 'Busca informações sobre produtos e empresa no banco de dados',
           parameters: {
             type: 'object',
             properties: {
-              size: {
+              query: {
                 type: 'string',
-                description: 'Tamanho da fonte (ex: "16px" ou "1em")'
+                description: 'Pergunta ou consulta do usuário'
               },
-              color: {
+              metadata: {
+                type: 'object',
+                description: 'Metadados para filtro',
+                default: { categoria: 'geral', tipo: 'consulta' }
+              },
+              namespace: {
                 type: 'string',
-                description: 'Cor de fundo do botão'
+                description: 'Namespace do Pinecone',
+                default: 'MasterIADEV'
               }
-            }
+            },
+            required: ['query']
           }
         }
       ]
@@ -269,6 +401,15 @@ async function initWebRTC() {
     // Criar conexão WebRTC
     pc = new RTCPeerConnection();
 
+    // Configurar listener de estado da conexão ICE
+    pc.oniceconnectionstatechange = function () {
+      console.log("Estado da conexão ICE:", pc.iceConnectionState);
+      if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
+        console.log("Tentando reconectar...");
+        setTimeout(() => initWebRTC(), 5000); // Tentar reconectar após 5 segundos
+      }
+    };
+
     // Configurar para receber o áudio remoto
     const audioEl = document.createElement("audio");
     audioEl.autoplay = true;
@@ -289,33 +430,13 @@ async function initWebRTC() {
       configureDataChannel();
     };
 
-    // Receber mensagens do canal de dados
-    dc.addEventListener("message", (e) => {
-      const event = JSON.parse(e.data);
-      console.log("Mensagem recebida no canal de dados:", event);
+    dc.onclose = () => {
+      console.log("Canal de dados fechado");
+    };
 
-
-      // Processar deltas de texto
-      if (event.type === "response.audio_transcript.delta" && event.delta) {
-        handleTextDelta(event.delta);
-      }
-
-      // Processar finalização do texto completo
-      if (event.type === "response.audio_transcript.done" && event.transcript) {
-        handleTranscriptDone(event.transcript);
-      }
-
-      // Tratar eventos de áudio
-      if (event.type === "response.audio.delta" && event.delta) {
-        audioChunks.push(event.delta);
-      } else if (event.type === "response.audio.done") {
-        console.log("Áudio final recebido");
-        const audioBlob = new Blob(audioChunks.map(base64ToArrayBuffer), { type: "audio/wav" });
-        const audioUrl = URL.createObjectURL(audioBlob);
-        displayMessage(null, "bot", audioUrl);
-        audioChunks = [];
-      }
-    });
+    dc.onerror = (error) => {
+      console.error("Erro no canal de dados:", error);
+    };
 
     // Criar e configurar oferta SDP
     const offer = await pc.createOffer();
@@ -338,10 +459,27 @@ async function initWebRTC() {
     await pc.setRemoteDescription(answer);
 
     console.log("Conexão WebRTC estabelecida com sucesso!");
+    isWebRTCActive = true;
   } catch (error) {
     console.error("Erro ao inicializar WebRTC:", error);
+    isWebRTCActive = false;
   }
 }
+
+// Função para verificar e reconectar o canal de dados
+function checkAndReconnectDataChannel() {
+  if (!isWebRTCActive || !dc || dc.readyState !== "open") {
+    console.log("Verificando necessidade de reconexão...");
+    if (!pc || pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
+      console.log("Iniciando reconexão...");
+      initWebRTC();
+    }
+  }
+}
+
+// Configurar intervalo de verificação de conexão
+setInterval(checkAndReconnectDataChannel, 10000); // Verificar a cada 10 segundos
+
 
 // Função para exibir mensagens no chat
 function displayMessage(text, sender, audioUrl = null) {
