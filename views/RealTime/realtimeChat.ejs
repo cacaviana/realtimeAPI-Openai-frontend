@@ -8,60 +8,58 @@
     <title>Chat Completions</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
+        :root {
+            --primary-color: #6200ea;
+            --bg-dark: #0F0F0F;
+            --bg-container: #1A1A1A;
+            --border-color: #333;
+            --text-color: #fff;
+            --placeholder-color: #666;
+        }
+
         * {
             margin: 0;
             padding: 0;
-            -webkit-box-sizing: border-box;
             box-sizing: border-box;
         }
 
         body {
             background-image: url("/assets/images/bg-background.png");
-            background-position: center center;
-            margin: 0;
-            padding: 0;
+            background-position: center;
             min-height: 100vh;
-            background-color: #0F0F0F;
-            color: #fff;
-            display: -webkit-box;
-            display: -ms-flexbox;
+            background-color: var(--bg-dark);
+            color: var(--text-color);
             display: flex;
-            -webkit-box-align: center;
-            -ms-flex-align: center;
             align-items: center;
-            -webkit-box-pack: center;
-            -ms-flex-pack: center;
             justify-content: center;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             padding: 20px;
         }
 
-        .wrapper {
+        .chat-wrapper {
             width: 800px;
             height: 600px;
-            background-color: #1A1A1A;
+            background-color: var(--bg-container);
             border-radius: 12px;
-            -webkit-box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
             box-shadow: 0 8px 32px rgba(0, 33, 68, 0.3);
             position: relative;
             overflow: hidden;
         }
 
-        .chat-container {
-            display: -webkit-box;
-            display: -ms-flexbox;
+        .chat-layout {
             display: flex;
-            -webkit-box-orient: vertical;
-            -webkit-box-direction: normal;
-            -ms-flex-direction: column;
+            height: 100%;
+        }
+
+        .chat-main {
+            flex: 3;
+            display: flex;
             flex-direction: column;
             height: 100%;
-            position: relative;
+            border-right: 1px solid var(--border-color);
         }
 
         .chat-messages {
-            -webkit-box-flex: 1;
-            -ms-flex-positive: 1;
             flex-grow: 1;
             overflow-y: auto;
             padding: 20px;
@@ -70,181 +68,139 @@
 
         .message {
             padding: 16px;
-            margin-bottom: 12px;
-            border-radius: 8px;
-            max-width: 85%;
+            margin: 10px 0;
+            max-width: 75%;
+            position: relative;
+            clear: both;
+            border-radius: 12px;
             word-wrap: break-word;
         }
 
-        .user-message {
-            background-color: #2B2B2B;
+        .message--user {
+            float: right;
+            background-color: var(--primary-color);
+            color: var(--text-color);
             margin-left: auto;
+            border-bottom-right-radius: 4px;
         }
 
-        .assistant-message {
-            background-color: #262626;
+        .message--assistant {
+            float: left;
+            background-color: #2B2B2B;
+            color: var(--text-color);
             margin-right: auto;
+            border-bottom-left-radius: 4px;
         }
 
-        .message-header {
+        .message__header {
             font-size: 0.85em;
             margin-bottom: 8px;
             color: #888;
         }
 
-        .input-container {
+        .chat-input {
             position: absolute;
             bottom: 0;
             left: 0;
             right: 0;
             padding: 20px;
-            background-color: #1A1A1A;
-            border-top: 1px solid #333;
+            background-color: var(--bg-container);
+            border-top: 1px solid var(--border-color);
         }
 
-        .input-box {
+        .chat-input__container {
             position: relative;
         }
 
-        textarea {
+        .chat-input__textarea {
             width: 100%;
             padding: 16px 45px 16px 16px;
             border-radius: 8px;
-            border: 1px solid #333;
+            border: 1px solid var(--border-color);
             background-color: #262626;
-            color: white;
+            color: var(--text-color);
             resize: none;
             outline: none;
             font-size: 16px;
             max-height: 150px;
             min-height: 56px;
-            -webkit-transition: border-color 0.3s ease;
             transition: border-color 0.3s ease;
         }
 
-        textarea:focus {
-            outline: none;
-            border: 1px solid #6200ea;
+        .chat-input__textarea:focus {
+            border-color: var(--primary-color);
         }
 
-        textarea::-webkit-input-placeholder {
-            color: #666;
+        .chat-input__textarea::placeholder {
+            color: var(--placeholder-color);
         }
 
-        textarea::-moz-placeholder {
-            color: #666;
-        }
-
-        textarea:-ms-input-placeholder {
-            color: #666;
-        }
-
-        textarea::-ms-input-placeholder {
-            color: #666;
-        }
-
-        textarea::placeholder {
-            color: #666;
-        }
-
-        #send-button {
+        .chat-input__button {
             position: absolute;
             right: 12px;
             bottom: 50%;
-            -webkit-transform: translateY(50%);
             transform: translateY(50%);
             background: none;
             border: none;
-            color: #fff;
+            color: var(--text-color);
             cursor: pointer;
             font-size: 20px;
-            -webkit-transition: color 0.3s ease;
             transition: color 0.3s ease;
         }
 
-        #send-button:hover {
+        .chat-input__button:hover {
             color: #0084ff;
         }
 
-        #send-button:disabled {
-            color: #666;
+        .chat-input__button:disabled {
+            color: var(--placeholder-color);
             cursor: not-allowed;
         }
 
-        /* Estilização da scrollbar */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: #1A1A1A;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: #333;
-            border-radius: 4px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: #444;
-        }
-
-        /* Responsividade */
-        @media (max-width: 850px) {
-            .wrapper {
-                width: 95%;
-                height: 90vh;
-                margin: 20px;
-            }
-        }
-
-        .chat-layout {
-            display: flex;
-            height: 100%;
-        }
-
-        .chat-container {
-            flex: 3;
-            /* Ajusta o tamanho do chat */
-            border-right: 1px solid #333;
-        }
-
-        .avatar-container {
+        .avatar {
             flex: 1;
-            /* Ajusta o tamanho da área do avatar */
             display: flex;
             justify-content: center;
             align-items: center;
-            background-color: #1A1A1A;
-        }
-
-        .avatar-container img {
-            width: 150px;
-            height: 150px;
+            width: 120px;
+            height: 120px;
             border-radius: 50%;
-            border: 2px solid #333;
+            background-color: var(--bg-container);
+            position: relative;
+            overflow: hidden;
+            border: 2px solid var(--border-color);
+            margin: 10px;
         }
 
-        .avatar-animation {
+        .avatar__emoji {
+            font-size: 48px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            transition: transform 0.1s ease-out;
+        }
+
+        .typing-indicator {
             display: flex;
             justify-content: center;
             align-items: center;
             gap: 8px;
         }
 
-        .dot {
+        .typing-indicator__dot {
             width: 20px;
             height: 20px;
-            background-color: #6200ea;
+            background-color: var(--primary-color);
             border-radius: 50%;
             animation: bounce 1.5s infinite ease-in-out;
         }
 
-        .dot:nth-child(2) {
+        .typing-indicator__dot:nth-child(2) {
             animation-delay: 0.3s;
         }
 
-        .dot:nth-child(3) {
+        .typing-indicator__dot:nth-child(3) {
             animation-delay: 0.6s;
         }
 
@@ -263,60 +219,58 @@
             }
         }
 
-        .avatar-container {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            width: 120px;
-            height: 120px;
-            border-radius: 50%;
-            background-color: #1A1A1A;
-            position: relative;
-            overflow: hidden;
-            border: 2px solid #333;
-            margin: 10px;
+        @media (max-width: 850px) {
+            .chat-wrapper {
+                width: 95%;
+                height: 90vh;
+                margin: 20px;
+            }
         }
 
-        .emoji {
-            font-size: 48px;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            transition: transform 0.1s ease-out;
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-container);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #444;
         }
     </style>
 </head>
 
 <body>
-    <div class="wrapper">
+    <div class="chat-wrapper">
         <div class="chat-layout">
-            <!-- Chat Container -->
-            <div class="chat-container">
+            <div class="chat-main">
                 <div class="chat-messages" id="messages">
-                    <div class="message assistant-message">
-                        <div class="message-header">Assistente</div>
+                    <div class="message message--assistant">
+                        <div class="message__header">Assistente</div>
                         Olá! Como posso ajudar você hoje?
                     </div>
                 </div>
-                <div class="input-container">
-                    <div class="input-box">
-                        <textarea id="userInput" placeholder="Digite sua mensagem aqui..." rows="1" onInput="this.style.height = 'auto'; this.style.height = this.scrollHeight + 'px';"></textarea>
-                        <button id="send-button" onclick="sendMessage()">➤</button>
+                <div class="chat-input">
+                    <div class="chat-input__container">
+                        <textarea id="userInput" class="chat-input__textarea" placeholder="Digite sua mensagem aqui..." rows="1" onInput="this.style.height = 'auto'; this.style.height = this.scrollHeight + 'px';"></textarea>
+                        <button class="chat-input__button" onclick="sendMessage()">➤</button>
                     </div>
                 </div>
             </div>
 
-            <!-- Avatar Section -->
-            <div class="avatar-container">
-                <div class="emoji" id="emoji">👀</div>
+            <div class="avatar">
+                <div class="avatar__emoji" id="emoji">👀</div>
             </div>
         </div>
     </div>
 
-    <!-- Bootstrap JS CDN -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Script -->
     <script src="/assets/js/chat%20-%20audio%20e%20texto.js"></script>
 </body>
 

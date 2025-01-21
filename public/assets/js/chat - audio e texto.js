@@ -63,22 +63,99 @@ function displayMessage(text, sender, audioUrl = null) {
 
 // Manipuladores de eventos de dados
 function handleDataChannelMessage(event) {
-  const msg = JSON.parse(event.data);
-  console.log("Mensagem recebida:", msg);
+  try {
+    const msg = JSON.parse(event.data);
+    console.log("Mensagem recebida:", msg);
 
-  switch (msg.type) {
-    case "response.audio_transcript.delta":
-      if (msg.delta) handleTextDelta(msg.delta);
-      break;
-    case "response.audio_transcript.done":
-      if (msg.transcript) handleTranscriptDone(msg.transcript);
-      break;
-    case "response.audio.delta":
-      if (msg.delta) audioChunks.push(msg.delta);
-      break;
-    case "response.audio.done":
-      handleAudioDone();
-      break;
+    switch (msg.type) {
+      case "response.output_item.done":
+        if (msg.item && msg.item.type === 'function_call' && msg.item.name === 'queryProductInfo') {
+          const outputData = msg.item.arguments || msg.item.output;
+
+          if (outputData) {
+            try {
+              const result = JSON.parse(outputData);
+              if (result && result.content) {
+                handleTextDelta(result.content);
+                handleTranscriptDone(result.content);
+              }
+            } catch (error) {
+              console.log("Usando outputData diretamente:", outputData);
+              handleTextDelta(outputData);
+              handleTranscriptDone(outputData);
+            }
+          } else {
+            const possibleResponse = msg.item.response ||
+              (msg.response && msg.response.output) ||
+              msg.item.output;
+
+            if (possibleResponse) {
+              handleTextDelta(possibleResponse);
+              handleTranscriptDone(possibleResponse);
+            }
+          }
+        }
+        break;
+
+      case "response.function_call_arguments.done":
+        if (msg.name === 'queryProductInfo') {
+          try {
+            const args = msg.arguments ? JSON.parse(msg.arguments) : {};
+            visualFunctions.queryProductInfo(args).then(result => {
+              if (result.success && result.content) {
+                // Adiciona a resposta no chat
+                displayMessage(result.content, "bot");
+
+                handleTextDelta(result.content);
+                handleTranscriptDone(result.content);
+
+                if (dc && dc.readyState === "open") {
+                  const response = {
+                    type: 'conversation.item.create',
+                    item: {
+                      type: 'function_call_output',
+                      call_id: msg.call_id,
+                      output: JSON.stringify({
+                        content: result.content,
+                        success: true
+                      })
+                    }
+                  };
+                  dc.send(JSON.stringify(response));
+                }
+              }
+            }).catch(error => {
+              console.error('Erro na execução da função:', error);
+              displayMessage("Desculpe, ocorreu um erro ao processar sua solicitação.", "bot");
+            });
+          } catch (error) {
+            console.error("Erro ao processar argumentos:", error);
+            displayMessage("Erro ao processar a resposta.", "bot");
+          }
+        }
+        break;
+
+      case "response.audio_transcript.delta":
+        if (msg.delta) handleTextDelta(msg.delta);
+        break;
+
+      case "response.audio_transcript.done":
+        if (msg.transcript) handleTranscriptDone(msg.transcript);
+        break;
+
+      case "response.audio.delta":
+        if (msg.delta) audioChunks.push(msg.delta);
+        break;
+
+      case "response.audio.done":
+        handleAudioDone();
+        break;
+
+      default:
+        console.log("Tipo de mensagem não processado:", msg.type);
+    }
+  } catch (error) {
+    console.error("Erro ao processar mensagem:", error);
   }
 }
 
@@ -171,7 +248,22 @@ const visualFunctions = {
       }
 
       const data = await response.json();
-      const content = data.assistant || "Não foi possível processar a resposta.";
+      console.log("Resposta completa da API:", data);
+
+      // Extrair o conteúdo específico
+      const content = data.content || "Não foi possível processar a resposta.";
+
+      // Enviar a mensagem para o chat com texto e áudio
+      if (dc && dc.readyState === "open") {
+        const messagePayload = {
+          type: "response.create",
+          response: {
+            modalities: ["text", "audio"],
+            instructions: content, // Usar o content como instrução para gerar texto e áudio
+          },
+        };
+        dc.send(JSON.stringify(messagePayload));
+      }
 
       return {
         success: true,
@@ -185,7 +277,7 @@ const visualFunctions = {
       };
 
     } catch (error) {
-      console.error('Erro ao consultar o banco de dados:', error);
+      console.error('Erro detalhado ao consultar o banco de dados:', error);
       return {
         success: false,
         error: 'Desculpe, não consegui acessar as informações no momento.'
@@ -267,6 +359,23 @@ function handleDataChannelMessage(event) {
           }
         }
         break;
+      case "conversation.item.created":
+        if (msg.item && msg.item.type === 'function_call_output') {
+          try {
+            const outputData = JSON.parse(msg.item.output);
+            console.log("Dados da resposta Pinecone:", outputData);
+
+            if (outputData.content) {
+              console.log("Conteúdo da resposta:", outputData.content);
+              handleTextDelta(outputData.content);
+              handleTranscriptDone(outputData.content);
+              displayMessage(outputData.content, "bot");
+            }
+          } catch (error) {
+            console.error("Erro ao processar a resposta:", error);
+          }
+        }
+        break;
 
       case "response.audio_transcript.delta":
         if (msg.delta) handleTextDelta(msg.delta);
@@ -289,7 +398,9 @@ function handleDataChannelMessage(event) {
     }
   } catch (error) {
     console.error("Erro ao processar mensagem:", error);
+
   }
+
 };
 
 // Função helper para debug
@@ -486,6 +597,12 @@ function displayMessage(text, sender, audioUrl = null) {
   const messagesDiv = document.getElementById("messages");
   const messageEl = document.createElement("div");
   messageEl.classList.add("message", sender);
+
+  // Adicionar emoji/avatar com estilo ajustado ao tema
+  const avatarEl = document.createElement("div");
+  avatarEl.classList.add("message--assistant");
+  avatarEl.innerHTML = sender === "user" ? "👤" : "🤖";
+  messageEl.appendChild(avatarEl);
 
   if (text) {
     const textEl = document.createElement("p");
